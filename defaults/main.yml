@@ -2,3 +2,6 @@
 
 kustomize_sources: []
 kustomize_overlay_name: ''
+
+kustomize_kubeconfig: "{{ omit }}"
+kustomize_delegation: "{{ omit }}"

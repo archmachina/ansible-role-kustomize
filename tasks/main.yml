@@ -1,12 +1,16 @@
 ---
 
+# Generate the definition from the kustomize sources
 - name: Create temporary area
   ansible.builtin.tempfile:
     state: directory
   register: temp_dir
   check_mode: false
+  delegate_to: localhost
 
-- block:
+- name: Generate kustomize definition
+  delegate_to: localhost
+  block:
     - name: Copy sources
       copy:
         src: "{{ item }}"
@@ -14,42 +18,29 @@
       check_mode: false
       loop: "{{ kustomize_sources }}"
 
-    - name: Copy overlay
-      copy:
-        src: "{{ playbook_dir }}/overlays/{{ kustomize_overlay_name }}"
-        dest: "{{ temp_dir.path }}/overlays/"
-      check_mode: false
-
-    - name: Set overlay dir
+    - name: set overlay path
       set_fact:
-        overlay_dir: "{{ temp_dir.path }}/overlays/{{ kustomize_overlay_name }}"
-      check_mode: false
+        kustomize_overlay_path: "{{ temp_dir.path }}/{{ kustomize_overlay_name }}"
 
-    - name: Diff manifest
-      command: >
-        kubectl diff {{ kustomize_kubectl_args }} -k "{{ temp_dir.path }}/overlays/{{ kustomize_overlay_name }}"
-      register: diff_output
-      failed_when: false
-      check_mode: false
-
-    - name: Display diff
-      debug:
-        var: diff_output
-      failed_when: false
-      check_mode: false
-
-    - name: Apply manifest
-      command: >
-        kubectl apply {{ kustomize_kubectl_args }} -k "{{ temp_dir.path }}/overlays/{{ kustomize_overlay_name }}"
-      register: apply_output
-
-    - name: Apply output
-      debug:
-        var: apply_output
-
+    - name: Generate definition
+      set_fact:
+        kustomize_definition: "{{ lookup('kubernetes.core.kustomize', dir=kustomize_overlay_path) }}"
   always:
     - name: Remove temporary directory
       file:
         path: "{{ temp_dir.path }}"
         state: absent
       check_mode: false
+
+- name: Apply manifest
+  kubernetes.core.k8s:
+    apply: true
+    definition: "{{ kustomize_definition }}"
+    kubeconfig: "{{ kustomize_kubeconfig }}"
+    no_proxy: true
+  delegate_to: "{{ kustomize_delegation }}"
+  register: kustomize_apply_result
+
+- name: Apply result
+  debug:
+    msg: "{{ kustomize_apply_result | to_yaml(indent=4) | split('\n') }}"
