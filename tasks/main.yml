@@ -1,0 +1,55 @@
+---
+
+- name: Create temporary area
+  ansible.builtin.tempfile:
+    state: directory
+  register: temp_dir
+  check_mode: false
+
+- block:
+    - name: Copy sources
+      copy:
+        src: "{{ item }}"
+        dest: "{{ temp_dir.path }}"
+      check_mode: false
+      loop: "{{ kustomize_sources }}"
+
+    - name: Copy overlay
+      copy:
+        src: "{{ playbook_dir }}/overlays/{{ kustomize_overlay_name }}"
+        dest: "{{ temp_dir.path }}/overlays/"
+      check_mode: false
+
+    - name: Set overlay dir
+      set_fact:
+        overlay_dir: "{{ temp_dir.path }}/overlays/{{ kustomize_overlay_name }}"
+      check_mode: false
+
+    - name: Diff manifest
+      command: >
+        kubectl diff {{ kustomize_kubectl_args }} -k "{{ temp_dir.path }}/overlays/{{ kustomize_overlay_name }}"
+      register: diff_output
+      failed_when: false
+      check_mode: false
+
+    - name: Display diff
+      debug:
+        var: diff_output
+      failed_when: false
+      check_mode: false
+
+    - name: Apply manifest
+      command: >
+        kubectl apply {{ kustomize_kubectl_args }} -k "{{ temp_dir.path }}/overlays/{{ kustomize_overlay_name }}"
+      register: apply_output
+
+    - name: Apply output
+      debug:
+        var: apply_output
+
+  always:
+    - name: Remove temporary directory
+      file:
+        path: "{{ temp_dir.path }}"
+        state: absent
+      check_mode: false
